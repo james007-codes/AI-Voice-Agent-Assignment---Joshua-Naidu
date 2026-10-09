@@ -88,7 +88,7 @@ export function SummaryView({
         ))}
       </dl>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[1.1fr_1fr]">
+      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-8">
           <div>
             <Label>Structured outcome</Label>

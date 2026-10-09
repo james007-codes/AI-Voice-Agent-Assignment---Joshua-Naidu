@@ -314,6 +314,9 @@ export class CallController {
     if (rms > threshold) {
       this.speechFrames++;
       if (this.speechFrames >= VAD_START_FRAMES) {
+        // Resumed after a mid-sentence pause: that pause wasn't the end of the
+        // turn, so don't count it toward Aria's response latency.
+        if (!this.userSpeaking && this.awaitingFirstAudio) this.userTurnEndedAt = null;
         this.userSpeaking = true;
         this.lastSpeechAt = now;
       }
