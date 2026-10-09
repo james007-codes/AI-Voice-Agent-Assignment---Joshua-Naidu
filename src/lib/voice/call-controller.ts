@@ -189,6 +189,8 @@ export class CallController {
     try {
       const enginePromise = engine.start(); // sync part runs inside the gesture
       const credsPromise = this.fetchSession();
+      // Wake the serverless functions now so the first lookup isn't a cold start.
+      for (const route of ["/api/tools", "/api/summary"]) void fetch(route).catch(() => {});
       const [creds] = await Promise.all([credsPromise, enginePromise]);
       if (this.snapshot.phase !== "connecting") return; // ended while connecting
 

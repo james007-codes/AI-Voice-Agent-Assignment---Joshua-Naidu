@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { z } from "zod";
 import { executeTool } from "@/lib/agent/tools";
 import { MemoryRateLimiter, clientIp } from "@/lib/server/rate-limit";
@@ -42,4 +43,14 @@ export async function POST(req: Request) {
   );
 
   return Response.json({ result: execution.result, durationMs: execution.durationMs });
+}
+
+/**
+ * Warm-up ping. The call screen hits this while the call is connecting so the
+ * first real tool call doesn't pay a serverless cold start (measured ~7 s).
+ * `connection()` keeps it dynamic; otherwise it would be prerendered.
+ */
+export async function GET() {
+  await connection();
+  return new Response(null, { status: 204 });
 }
