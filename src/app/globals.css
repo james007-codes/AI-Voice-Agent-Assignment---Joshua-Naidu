@@ -1,26 +1,76 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Two visual languages, one token set:
+ *  - Landing ("pop"): cream + saturated blocks, condensed display caps.
+ *  - Call ("signal"): near-black, mint signal colour, serif-mono display,
+ *    mono micro-labels and a particle field.
+ * Each page is a fixed-theme brand surface, so colours are set per surface
+ * rather than switching on prefers-color-scheme.
+ */
+@theme {
+  --color-cream: #efede6;
+  --color-ink: #121212;
+  --color-sun: #e9bd16;
+  --color-tomato: #e8442a;
+  --color-grape: #7b6cf6;
+  --color-bubblegum: #f0508a;
+  --color-leaf: #2f9e5b;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-void: #141414;
+  --color-void-2: #1b1b1b;
+  --color-void-3: #232323;
+  --color-mint: #a8f5c8;
+  --color-mint-dim: #5f8f74;
+  --color-fog: #e9e8e3;
+  --color-smoke: #8b8b86;
+  --color-line: rgb(255 255 255 / 0.09);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --font-display: var(--font-anton), "Impact", sans-serif;
+  --font-serif: var(--font-xanh), "Courier New", serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-marquee-reverse: marquee 46s linear infinite reverse;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-blink: blink 1.4s ease-in-out infinite;
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(var(--r, 0deg)); }
+    50% { transform: translateY(-12px) rotate(var(--r, 0deg)); }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
   }
 }
 
+html {
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+/* Thin scrollbars on the dark call surface */
+.scroll-thin { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.15) transparent; }
+
+/* Dotted frame used by Byotone-style buttons and labels */
+.dash-frame { border: 1px dashed rgb(255 255 255 / 0.18); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }
