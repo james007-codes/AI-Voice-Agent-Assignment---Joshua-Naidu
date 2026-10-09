@@ -58,6 +58,13 @@ export class GeminiLiveTransport implements VoiceTransport {
       if (content.turnComplete) ev.onTurnComplete();
     }
 
+    // The SDK only normalises this field for Vertex; on the Gemini API path the
+    // raw shape comes through, so accept either key.
+    const activity = msg.voiceActivity as { voiceActivityType?: string; type?: string } | undefined;
+    const activityType = activity?.voiceActivityType ?? activity?.type;
+    if (activityType === "ACTIVITY_START") ev.onUserActivity(true);
+    else if (activityType === "ACTIVITY_END") ev.onUserActivity(false);
+
     if (msg.toolCall?.functionCalls?.length) {
       ev.onToolCalls(
         msg.toolCall.functionCalls.map((fc) => ({

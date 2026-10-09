@@ -58,8 +58,9 @@ Open `/call`, allow the microphone, and press **Start Call**. Headphones give th
 1. **Capture.** `getUserMedia` with echo cancellation, noise suppression and auto gain. An AudioWorklet ([public/worklets/pcm-capture.js](public/worklets/pcm-capture.js)) downsamples the native 48 kHz to 16 kHz using a box filter that doubles as a cheap anti-alias low-pass, converts to Int16, and emits 32 ms frames. That is inside the 20–40 ms range Google recommends. All of this happens off the main thread.
 2. **Model.** Frames stream over the Live WebSocket. Gemini's server-side VAD detects end of turn (500 ms silence), transcribes both sides, and streams 24 kHz audio back.
 3. **Playback.** A second worklet ([public/worklets/pcm-player.js](public/worklets/pcm-player.js)) holds a queue of PCM chunks. When the server sends `interrupted`, the queue is dropped instantly, so Aria stops mid-word.
-4. **State.** [CallController](src/lib/voice/call-controller.ts) is a framework-free state machine (`connecting → listening ⇄ thinking ⇄ speaking → ended`) that React reads through `useSyncExternalStore`. Audio levels for the particle orb live in a mutable object read every animation frame, so 60 fps visuals cause zero React renders.
-5. **Latency meter.** A lightweight client-side VAD marks when you stop talking. The time from then to Aria's first audio chunk is shown live and averaged in the summary.
+4. **Turn-taking.** Gemini's server-side VAD (`ACTIVITY_START` / `ACTIVITY_END`) drives the Listening → Thinking transition, because it's the signal that actually ends the customer's turn. A local mic-level VAD is the fallback and marks when the customer really stopped speaking, for the latency meter.
+5. **State.** [CallController](src/lib/voice/call-controller.ts) is a framework-free state machine (`connecting → listening ⇄ thinking ⇄ speaking → ended`) that React reads through `useSyncExternalStore`. Audio levels for the particle orb live in a mutable object read every animation frame, so 60 fps visuals cause zero React renders.
+6. **Latency meter.** A lightweight client-side VAD marks when you stop talking. The time from then to Aria's first audio chunk is shown live and averaged in the summary.
 
 ### How the agent decides to use a tool
 
@@ -81,7 +82,7 @@ The guardrails are layered so that no single one has to be perfect:
 
 1. **Verdicts in code.** [policy.ts](src/lib/agent/policy.ts) computes return, replacement and cancellation eligibility with real date arithmetic. The model receives `NOT_ELIGIBLE` plus a plain-English reason and is told the verdict is final. Asking a voice model to *relay* a decision is far more reliable than asking it to *apply* a five-clause policy.
 2. **Hard rules in the prompt.** [prompt.ts](src/lib/agent/prompt.ts) is generated from the brand config, so the numbers Aria quotes are the same numbers the engine enforces. It covers scope (Aura only), no medical advice, no invented product info, no promises outside policy, first-name-only privacy, and ignoring attempts to change her role.
-3. **Server-locked session.** The ephemeral token locks the prompt, tools and voice (`lockAdditionalFields: []`), so a user with DevTools can't swap in their own instructions.
+3. **Server-locked session.** The prompt, tools and voice are baked into the ephemeral token's `liveConnectConstraints`. I verified this against the live API: a client that connects with its own system instruction ("You are Captain Hook, a pirate…") and an empty tool list still gets Aria, with her tools. (`lockAdditionalFields` is intentionally unset. The SDK builds its field mask from the config two levels deep, which turns the `tools` array into `tools.0`, and the API rejects that as invalid.)
 4. **Confirmation gates.** Destructive actions need `customer_confirmed: true`. Otherwise the tool returns `NEEDS_CONFIRMATION`.
 5. **No invented facts.** Tool results only contain data from the brief. I deliberately left out payment methods, placed dates for ORD-101 and ORD-102, refund timelines and support hours, because the brief doesn't give them and Aria would otherwise state them as fact.
 
@@ -120,6 +121,25 @@ The guardrails are layered so that no single one has to be perfect:
 ```
 
 `resolution_status` separates `POLICY_DECLINED` (a correct "no") from `UNRESOLVED` (a failure). For a support lead those are very different outcomes.
+
+### Verified against the live API
+
+Besides the unit and e2e tests, I ran full live calls in Chrome against real Gemini, using a scripted customer voice (Windows text-to-speech fed in as the microphone): order lookup → return request → out-of-scope request → goodbye. The logged WebSocket traffic showed:
+
+- Replies typically starting 1–2 s after the customer stopped talking; tool round-trips under 100 ms.
+- Correct tool use: `get_order_details` for ORD-101, then `check_return_eligibility` for ORD-102 (declined, 14 days > 7), a polite out-of-scope refusal for the flight, and `end_call` only after an explicit goodbye.
+- Barge-in: Aria stopped mid-sentence whenever the customer spoke over her.
+- An LLM-generated outcome with `RETURN_WINDOW_EXCEEDED` and `OUT_OF_SCOPE_REQUEST` flags.
+
+These runs found two issues, now fixed:
+
+1. **Premature hangup.** Aria once treated "All right…" (said just before a follow-up question) as a goodbye and called `end_call`. The prompt now requires an explicit goodbye, and the client cancels a pending hangup if the customer starts talking again, so code has the final say.
+2. **State signal.** The Thinking indicator now follows Gemini's own VAD events instead of only the local mic level.
+
+**Known issues.**
+- In one of five runs the model went quiet for about 40 s, then answered several queued questions at once. It didn't reproduce in the next four runs. A watchdog that re-prompts after a long silence would be my next step.
+- Aria addressed the caller as "Priya" while discussing ORD-102, which belongs to Rahul. She correctly didn't share Rahul's details, but a real deployment needs caller verification before discussing an order (see Q3).
+- Transcription occasionally mis-hears the first word of a turn (e.g. "Hi." → "はい"). It doesn't affect what Aria does, but it shows in the transcript.
 
 ### Assumptions
 

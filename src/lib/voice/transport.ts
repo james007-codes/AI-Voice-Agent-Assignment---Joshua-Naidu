@@ -25,6 +25,8 @@ export interface TransportEvents {
   /** Base64 Int16 PCM at 24 kHz. */
   onAudio: (base64Pcm: string) => void;
   onInputTranscript: (textDelta: string) => void;
+  /** Server-side VAD: the customer started (true) or stopped (false) talking. */
+  onUserActivity: (speaking: boolean) => void;
   onOutputTranscript: (textDelta: string) => void;
   /** Customer barged in; queued agent audio must be dropped. */
   onInterrupted: () => void;

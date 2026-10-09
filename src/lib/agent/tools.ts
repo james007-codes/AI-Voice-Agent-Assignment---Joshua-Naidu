@@ -226,7 +226,7 @@ export const TOOLS = [
   defineTool({
     name: "end_call",
     description:
-      "End the call. Call only after the customer indicates they're done and you have said a short goodbye.",
+      "End the call. Only after the customer explicitly says goodbye or confirms they need nothing else, and you have said a short goodbye. Never after a bare 'okay' or 'all right'.",
     args: z.object({ reason: z.string().optional() }),
     async handler() {
       return { status: "ENDING" };

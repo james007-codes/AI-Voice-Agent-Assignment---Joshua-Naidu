@@ -58,7 +58,10 @@ await page.routeWebSocket(/generativelanguage/, (ws) => {
       send(said("Hi, this is Aria from Aura Skincare. How can I help you today?"));
       send(turnComplete);
       setTimeout(() => {
+        // Raw Gemini API shape for server-side VAD events.
+        send({ voiceActivity: { type: "ACTIVITY_START" } });
         send(heard("Where is my order ORD-101?"));
+        send({ voiceActivity: { type: "ACTIVITY_END" } });
         send({ toolCall: { functionCalls: [{ id: "fc1", name: "get_order_details", args: { order_id: "ORD-101" } }] } });
       }, 1500);
       return;

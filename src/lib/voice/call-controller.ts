@@ -92,8 +92,9 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   end_call: () => "Wrapping up",
 };
 
-// Local voice-activity detection, used only for UI state and latency
-// measurement. Turn-taking itself is done by Gemini's server-side VAD.
+// Local voice-activity detection. It marks when the customer actually stopped
+// speaking (for the latency meter) and drives the Thinking state only until
+// Gemini's own VAD events arrive. Turn-taking itself is always server-side.
 const VAD_MIN_THRESHOLD = 0.02;
 const VAD_START_FRAMES = 3; // ~100 ms of speech
 const VAD_HANGOVER_MS = 450;
@@ -121,6 +122,8 @@ export class CallController {
   private lastSpeechAt = 0;
   private userTurnEndedAt: number | null = null;
   private awaitingFirstAudio = false;
+  /** Set once the server sends VAD events; local VAD then stops driving state. */
+  private serverVad = false;
 
   // tools / hangup
   private cancelledToolIds = new Set<string>();
@@ -198,6 +201,7 @@ export class CallController {
         onError: (message) => this.set({ notice: message }),
         onAudio: (pcm) => this.onAudio(pcm),
         onInputTranscript: (t) => this.appendTranscript("customer", t),
+        onUserActivity: (speaking) => this.onUserActivity(speaking),
         onOutputTranscript: (t) => this.appendTranscript("agent", t),
         onInterrupted: () => this.onInterrupted(),
         onTurnComplete: () => this.onTurnComplete(),
@@ -286,6 +290,7 @@ export class CallController {
     this.userSpeaking = false;
     this.userTurnEndedAt = null;
     this.awaitingFirstAudio = false;
+    this.serverVad = false;
     this.playing = false;
     this.cancelledToolIds.clear();
     this.pendingHangup = false;
@@ -314,16 +319,37 @@ export class CallController {
       this.speechFrames = 0;
       if (this.userSpeaking && now - this.lastSpeechAt > VAD_HANGOVER_MS) {
         this.userSpeaking = false;
-        if (this.snapshot.phase === "listening") {
+        if (this.snapshot.phase === "listening" || this.serverVad) {
           this.userTurnEndedAt = this.lastSpeechAt;
           this.awaitingFirstAudio = true;
-          this.setPhase("thinking");
-          // If that was just noise, the server never responds: drop back.
-          this.timer("thinkingWatchdog", THINKING_WATCHDOG_MS, () => {
-            if (this.snapshot.phase === "thinking" && !this.snapshot.activity) this.setPhase("listening");
-          });
         }
+        if (!this.serverVad && this.snapshot.phase === "listening") this.enterThinking();
       }
+    }
+  }
+
+  private enterThinking() {
+    this.setPhase("thinking");
+    // If that was just noise, the server never responds: drop back.
+    this.timer("thinkingWatchdog", THINKING_WATCHDOG_MS, () => {
+      if (this.snapshot.phase === "thinking" && !this.snapshot.activity) this.setPhase("listening");
+    });
+  }
+
+  /** Gemini's VAD: the authoritative signal for when the customer's turn ends. */
+  private onUserActivity(speaking: boolean) {
+    this.serverVad = true;
+    if (speaking) {
+      this.cancelPendingHangup();
+      this.clearTimer("thinkingWatchdog");
+      if (this.snapshot.phase === "thinking" && !this.snapshot.activity) this.setPhase("listening");
+      return;
+    }
+    if (this.snapshot.phase === "listening") {
+      // Fall back to "now" if local VAD missed the speech (e.g. very quiet mic).
+      this.userTurnEndedAt ??= performance.now();
+      this.awaitingFirstAudio = true;
+      this.enterThinking();
     }
   }
 
@@ -365,6 +391,7 @@ export class CallController {
 
   private onInterrupted() {
     // Barge-in: customer started talking over Aria.
+    this.cancelPendingHangup();
     this.engine?.flush();
     this.playing = false;
     if (this.openAgentId) this.patchItem(this.openAgentId, { interrupted: true });
@@ -440,6 +467,18 @@ export class CallController {
       this.timer("hangupFallback", 8000, () => void this.end("agent_ended_call"));
     }
     if (this.snapshot.phase === "thinking") this.set({ activity: null });
+  }
+
+  /**
+   * The model can misjudge "all right…" as a goodbye. If the customer keeps
+   * talking after end_call, stay on the line: code has the final say.
+   */
+  private cancelPendingHangup() {
+    if (!this.pendingHangup) return;
+    this.pendingHangup = false;
+    this.turnCompleteSinceHangup = false;
+    this.clearTimer("hangupFallback");
+    this.clearTimer("drain");
   }
 
   private async runTool(call: ToolCallRequest): Promise<ToolCallResponse | null> {
