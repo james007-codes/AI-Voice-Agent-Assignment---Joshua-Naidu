@@ -2,7 +2,7 @@
 
 A browser-based voice support agent for a fictional D2C skincare brand. Click **Start Call**, talk, and Aria answers out loud. She looks up live orders, enforces brand policy, recognises what she can't help with, and produces a transcript plus a structured JSON outcome when the call ends.
 
-- **Live app:** `<add Vercel URL>`
+- **Live app:** https://aura-voice-agent-jade.vercel.app
 - **Demo video:** `<add link>`
 
 **Approach.** Aria is a speech-to-speech agent: the browser streams audio straight to the Gemini Live API on a single-use, server-locked token, so there is no relay hop adding latency. Everything that has to be trusted runs on the server behind zod-validated tools: order lookups, a deterministic policy engine and the post-call summary. The model handles the conversation and code makes the decisions. Return and cancellation verdicts come from unit-tested functions, and the prompt only tells Aria to relay them.
